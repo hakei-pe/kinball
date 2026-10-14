@@ -1,0 +1,619 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#15171c">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="킨볼 점수판">
+<title>킨볼 점수판</title>
+<style>
+:root { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); box-sizing: border-box; height: 100%; }
+body { margin: 0; }
+img { max-width: 100%; }
+[hidden] { display: none !important; }
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Chakra+Petch:wght@500;700&family=IBM+Plex+Sans+KR:wght@400;600&display=swap">
+<style>
+/* Layout: one-screen scoreboard. Three team panels — side by side on wide/landscape screens, stacked rows on portrait phones. Panels size their numbers with container queries. */
+:root {
+  color-scheme: dark;
+  --bg: #15171c;
+  --surface: #1f222a;
+  --line: #343844;
+  --fg: #eceef3;
+  --muted: #8d93a1;
+  --accent: #ffcf3a;
+  --pink: #ff3f8e;   --pink-ink: #24040f;
+  --black: #08080a;  --black-ink: #f4f4f6;
+  --gray: #a3a9b4;   --gray-ink: #14161a;
+  --f-display: "Black Han Sans", "IBM Plex Sans KR", system-ui, sans-serif;
+  --f-num: "Chakra Petch", ui-monospace, "SF Mono", monospace;
+  --f-ui: "IBM Plex Sans KR", system-ui, -apple-system, "Apple SD Gothic Neo", sans-serif;
+  --gutter: clamp(16px, 2vw, 28px);
+  --r: 14px;
+}
+html, body { height: 100%; }
+body {
+  background: var(--bg); color: var(--fg);
+  font-family: var(--f-ui); font-size: 15px;
+  padding-inline: var(--gutter); padding-block: 12px;
+  box-sizing: border-box;
+  display: grid; grid-template-rows: auto auto 1fr auto; gap: 12px;
+  overflow: hidden;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+*, *::before, *::after { box-sizing: inherit; }
+button { font: inherit; color: inherit; cursor: pointer; touch-action: manipulation; }
+button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+button:disabled { opacity: .35; cursor: not-allowed; }
+
+/* Top bar */
+.bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.brand { font-family: var(--f-display); font-size: 1.15rem; letter-spacing: .02em; margin-right: auto; }
+.period {
+  display: flex; align-items: baseline; gap: 10px;
+  font-family: var(--f-num); font-weight: 700;
+  padding: 4px 14px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface);
+}
+.period .lbl { font-size: .72rem; letter-spacing: .14em; color: var(--muted); }
+.period .val { font-size: 1.3rem; color: var(--accent); font-variant-numeric: tabular-nums; }
+.tools { display: flex; gap: 6px; }
+.tbtn {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+  padding: 8px 12px; font-size: .9rem; font-weight: 600; min-height: 40px;
+}
+.tbtn:hover:not(:disabled) { border-color: var(--muted); }
+.tbtn kbd { font-family: var(--f-num); font-size: .7rem; color: var(--muted); margin-left: 4px; }
+
+.status { font-size: .88rem; color: var(--muted); min-height: 1.3em; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.status b { color: var(--fg); font-weight: 600; }
+
+/* Board */
+.board { position: relative; display: grid; gap: 10px; grid-template-rows: repeat(3, 1fr); min-height: 0; }
+@media (orientation: landscape) and (min-width: 560px) {
+  .board { grid-template-rows: 1fr; grid-template-columns: repeat(3, 1fr); }
+}
+.team {
+  --c: var(--gray); --ink: var(--gray-ink);
+  container-type: size; min-height: 0; min-width: 0;
+  background: var(--c); color: var(--ink);
+  border-radius: var(--r); padding: 12px;
+  display: grid; grid-template-columns: 1fr minmax(118px, 38%); grid-template-rows: auto 1fr; gap: 8px;
+  grid-template-areas: "head ctrls" "score ctrls";
+  position: relative; transition: box-shadow .2s;
+}
+.team.dark { box-shadow: inset 0 0 0 2px var(--line); }
+.team.lead::after {
+  content: "선두"; position: absolute; top: 10px; right: 10px;
+  font-size: .7rem; font-weight: 600; letter-spacing: .08em;
+  background: var(--accent); color: #1a1400; padding: 2px 8px; border-radius: 999px;
+}
+.team.lead .ctrls { margin-top: 0; }
+.head { grid-area: head; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; min-width: 0; }
+.name { font-family: var(--f-display); font-size: clamp(1.1rem, 9cqh, 2rem); line-height: 1; overflow-wrap: anywhere; }
+.wins { font-family: var(--f-num); font-size: .8rem; font-weight: 700; letter-spacing: .06em; opacity: .75; }
+.score {
+  grid-area: score; align-self: center;
+  font-family: var(--f-num); font-weight: 700; line-height: .85;
+  font-size: min(62cqh, 30cqw); font-variant-numeric: tabular-nums;
+}
+.score.bump { animation: bump .28s ease-out; }
+@keyframes bump { 0% { transform: scale(1.08); } 100% { transform: scale(1); } }
+.ctrls { grid-area: ctrls; display: grid; grid-template-rows: 1fr auto; gap: 8px; min-height: 0; }
+.team.lead .ctrls { padding-top: 22px; }
+.fault {
+  border: 2px solid currentColor; border-radius: 12px;
+  background: color-mix(in srgb, var(--ink) 12%, transparent);
+  display: grid; place-content: center; gap: 2px; text-align: center;
+  font-family: var(--f-display); font-size: clamp(1.1rem, 12cqh, 1.8rem); line-height: 1.1; padding: 6px;
+}
+.fault small { font-family: var(--f-ui); font-size: .72rem; font-weight: 600; opacity: .8; }
+.fault:active:not(:disabled) { background: color-mix(in srgb, var(--ink) 28%, transparent); }
+.adj { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.adj button {
+  border: 1px solid color-mix(in srgb, var(--ink) 40%, transparent); border-radius: 10px;
+  background: transparent; font-family: var(--f-num); font-weight: 700; font-size: 1rem; min-height: 40px;
+}
+
+@media (orientation: landscape) and (min-width: 560px) {
+  .team { grid-template-columns: 1fr; grid-template-rows: auto 1fr auto; grid-template-areas: "head" "score" "ctrls"; padding: clamp(12px, 3cqw, 22px); }
+  .score { justify-self: center; font-size: min(46cqh, 62cqw); }
+  .name { font-size: clamp(1.2rem, 9cqw, 2.6rem); }
+  .ctrls { grid-template-rows: auto auto; }
+  .team.lead .ctrls { padding-top: 0; }
+  .fault { min-height: clamp(56px, 16cqh, 110px); font-size: clamp(1.2rem, 8cqw, 2rem); }
+}
+
+/* Period-over banner */
+.over {
+  position: absolute; inset: auto 0 0 0; margin: auto;
+  background: var(--surface); border: 2px solid var(--accent); border-radius: var(--r);
+  padding: 16px 18px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
+  box-shadow: 0 18px 50px rgb(0 0 0 / .55);
+}
+.over p { margin: 0 auto 0 0; font-size: 1.05rem; font-weight: 600; min-width: 0; }
+.over p span { display: block; font-size: .78rem; color: var(--accent); letter-spacing: .12em; font-family: var(--f-num); }
+.primary { background: var(--accent); color: #1a1400; border: 0; border-radius: 10px; padding: 12px 18px; font-weight: 700; min-height: 46px; }
+
+/* History */
+.hist { display: flex; gap: 8px; overflow-x: auto; min-height: 30px; align-items: center; font-size: .82rem; color: var(--muted); }
+.hist .chip { flex: none; border: 1px solid var(--line); border-radius: 8px; padding: 4px 10px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.hist .chip b { color: var(--accent); font-family: var(--f-num); margin-right: 6px; }
+.hist .w { color: var(--fg); font-weight: 600; }
+.hint { margin-left: auto; flex: none; }
+@media (hover: none) { .hint, .tbtn kbd { display: none; } }
+
+/* Settings sheet */
+.sheet-wrap { position: fixed; inset: 0; background: rgb(0 0 0 / .6); display: grid; place-items: center; padding: 16px; z-index: 10; }
+.sheet { width: min(440px, 100%); background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 20px; display: grid; gap: 14px; max-height: 100%; overflow: auto; }
+.sheet h2 { margin: 0; font-family: var(--f-display); font-weight: 400; font-size: 1.4rem; }
+.field { display: grid; gap: 6px; }
+.field label { font-size: .8rem; color: var(--muted); letter-spacing: .04em; }
+.field input { font: inherit; font-size: 1rem; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; width: 100%; }
+.teamset { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); }
+.teamset-top { display: flex; gap: 10px; align-items: center; }
+.teamset-top .chip-preview { flex: none; width: 40px; height: 40px; border-radius: 10px; box-shadow: inset 0 0 0 1px var(--line); display: grid; place-items: center; font-family: var(--f-num); font-weight: 700; }
+.teamset-top input { background: var(--surface); }
+.swatches { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.sw { width: 30px; height: 30px; border-radius: 50%; border: 2px solid transparent; box-shadow: inset 0 0 0 1px rgb(255 255 255 / .18); padding: 0; }
+.sw[aria-pressed="true"] { border-color: var(--accent); outline: 2px solid var(--bg); outline-offset: -4px; }
+.custom { position: relative; width: 30px; height: 30px; border-radius: 50%; overflow: hidden; border: 1px dashed var(--muted); display: grid; place-items: center; font-size: .9rem; color: var(--muted); }
+.custom input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; padding: 0; border: 0; }
+.presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.presets button { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; min-width: 52px; min-height: 42px; font-family: var(--f-num); font-weight: 700; font-size: 1.05rem; }
+.presets button[aria-pressed="true"] { background: var(--accent); color: #1a1400; border-color: var(--accent); }
+.stepper { display: flex; gap: 6px; align-items: stretch; }
+.stepper button { width: 46px; flex: none; }
+.stepper input { text-align: center; font-family: var(--f-num); font-weight: 700; font-size: 1.2rem; }
+.presets.ko button { font-family: var(--f-ui); font-size: .88rem; font-weight: 600; padding: 0 12px; }
+.soundrow { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.soundrow input[type=range] { flex: 1; min-width: 120px; accent-color: var(--accent); }
+.tbtn.off { color: var(--muted); text-decoration: line-through; }
+.period { cursor: pointer; color: inherit; font: inherit; }
+.period:hover { border-color: var(--muted); }
+.note { font-size: .8rem; color: var(--muted); margin: 0; line-height: 1.5; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: space-between; }
+.danger { background: transparent; border: 1px solid #e05656; color: #ff8d8d; border-radius: 10px; padding: 10px 14px; font-weight: 600; }
+.danger.armed { background: #e05656; color: #fff; }
+
+@media (prefers-reduced-motion: reduce) { .score.bump { animation: none; } * { transition: none !important; } }
+</style>
+</head>
+<body>
+<header class="bar">
+  <div class="brand">킨볼 점수판</div>
+  <button class="period" id="periodBtn" type="button" aria-live="polite" title="목표 점수 바꾸기"><span class="lbl">PERIOD</span><span class="val" id="pNum">1</span><span class="lbl">목표</span><span class="val" id="pTarget">13</span></button>
+  <div class="tools">
+    <button class="tbtn" id="soundBtn" type="button" aria-pressed="true">소리<kbd>M</kbd></button>
+    <button class="tbtn" id="undoBtn" type="button">되돌리기<kbd>Z</kbd></button>
+    <button class="tbtn" id="setBtn" type="button">설정</button>
+    <button class="tbtn" id="fsBtn" type="button">전체화면</button>
+  </div>
+</header>
+<div class="status" id="status" aria-live="polite"></div>
+
+<main class="board" id="board">
+  <section class="team" data-t="pink" data-i="0"></section>
+  <section class="team" data-t="black" data-i="1"></section>
+  <section class="team" data-t="gray" data-i="2"></section>
+  <div class="over" id="over" hidden>
+    <p id="overText"></p>
+    <button class="tbtn" id="overUndo" type="button">되돌리기</button>
+    <button class="primary" id="nextBtn" type="button">다음 피리어드 시작</button>
+  </div>
+</main>
+
+<footer class="hist" id="hist"></footer>
+
+<div class="sheet-wrap" id="sheet" hidden>
+  <form class="sheet" id="setForm">
+    <h2>경기 설정</h2>
+    <div class="field">
+      <label for="target">피리어드 목표 점수</label>
+      <div class="presets" id="presets"></div>
+      <div class="stepper">
+        <button class="tbtn" type="button" id="tMinus" aria-label="목표 점수 1 줄이기">−</button>
+        <input id="target" type="number" min="1" max="99" inputmode="numeric">
+        <button class="tbtn" type="button" id="tPlus" aria-label="목표 점수 1 늘리기">+</button>
+      </div>
+      <p class="note">어느 팀이든 이 점수에 도달하면 피리어드가 끝납니다. 진행 중인 피리어드에도 바로 적용됩니다.</p>
+    </div>
+    <div class="field">
+      <label>소리</label>
+      <div class="soundrow">
+        <button class="tbtn" type="button" id="sndToggle" aria-pressed="true">켜짐</button>
+        <input type="range" id="vol" min="0" max="100" step="5" aria-label="음량">
+      </div>
+      <label>득점 소리 <span style="opacity:.7">· 눌러서 미리 듣기</span></label>
+      <div class="presets ko" id="scoreSnd"></div>
+      <label>피리어드 승리 소리</label>
+      <div class="presets ko" id="winSnd"></div>
+    </div>
+    <div class="field">
+      <label>팀 이름과 색상</label>
+      <div class="teamset" id="ts0"></div>
+      <div class="teamset" id="ts1"></div>
+      <div class="teamset" id="ts2"></div>
+    </div>
+    <div class="row">
+      <button class="danger" id="resetBtn" type="button">새 경기 시작</button>
+      <div class="tools">
+        <button class="tbtn" id="closeBtn" type="button">닫기</button>
+        <button class="primary" type="submit">저장</button>
+      </div>
+    </div>
+  </form>
+</div>
+
+<script>
+(() => {
+  const KEY = 'kinball-scoreboard-v1';
+  const DEFAULT_COLORS = ['#ff3f8e', '#08080a', '#a3a9b4'];
+  const PALETTE = [
+    ['핑크', '#ff3f8e'], ['블랙', '#08080a'], ['그레이', '#a3a9b4'], ['파랑', '#2f6fe4'],
+    ['빨강', '#e23b3b'], ['초록', '#22a45d'], ['노랑', '#ffd23f'], ['주황', '#ff8a2a'],
+    ['보라', '#8b5cf6'], ['하늘', '#38bdf8'], ['흰색', '#f4f4f2']
+  ];
+  const TARGETS = [7, 9, 11, 13, 15, 21];
+  const fresh = (names, target, colors) => ({
+    names: names || ['핑크', '블랙', '그레이'], target: target || 13, colors: colors || DEFAULT_COLORS.slice(),
+    scores: [0, 0, 0], wins: [0, 0, 0], period: 1, done: [], over: false, last: ''
+  });
+  let s;
+  try { s = JSON.parse(localStorage.getItem(KEY)); } catch (e) {}
+  if (!s || !Array.isArray(s.scores)) s = fresh();
+  if (!Array.isArray(s.colors)) s.colors = DEFAULT_COLORS.slice();
+
+  // Pick readable text color for any background
+  function lum(hex) {
+    const n = parseInt(hex.slice(1), 16), c = [n >> 16, (n >> 8) & 255, n & 255].map(v => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; });
+    return .2126 * c[0] + .7152 * c[1] + .0722 * c[2];
+  }
+  const inkFor = hex => lum(hex) > .2 ? '#121317' : '#f6f6f8';
+
+  // ---------- Sound (synthesized with Web Audio, no files) ----------
+  const PKEY = 'kinball-sound-v1';
+  let prefs = { on: true, vol: 70, score: 'random', win: 'random' };
+  try { Object.assign(prefs, JSON.parse(localStorage.getItem(PKEY)) || {}); } catch (e) {}
+  const savePrefs = () => { try { localStorage.setItem(PKEY, JSON.stringify(prefs)); } catch (e) {} };
+
+  let ctx = null, last = '';
+  function ac() {
+    try {
+      if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+      if (ctx.state === 'suspended') ctx.resume();
+    } catch (e) { ctx = null; }
+    return ctx;
+  }
+  function out(c) { const g = c.createGain(); g.gain.value = (prefs.vol / 100) * .8; g.connect(c.destination); return g; }
+  function tone(c, dst, f, at, dur, type = 'sine', vol = .4, f2 = null, filter = null) {
+    const t = c.currentTime + at, o = c.createOscillator(), g = c.createGain();
+    o.type = type; o.frequency.setValueAtTime(f, t);
+    if (f2) o.frequency.exponentialRampToValueAtTime(f2, t + dur);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(vol, t + .012);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    let node = o;
+    if (filter) { const fl = c.createBiquadFilter(); fl.type = 'lowpass'; fl.frequency.value = filter; o.connect(fl); node = fl; }
+    node.connect(g); g.connect(dst); o.start(t); o.stop(t + dur + .05);
+    return o;
+  }
+  let noiseBuf = null;
+  function noise(c, dst, at, dur, vol = .4, freq = 1500, q = 1, type = 'bandpass', attack = .005) {
+    if (!noiseBuf) {
+      noiseBuf = c.createBuffer(1, c.sampleRate * 3, c.sampleRate);
+      const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    }
+    const t = c.currentTime + at, src = c.createBufferSource(), fl = c.createBiquadFilter(), g = c.createGain();
+    src.buffer = noiseBuf; fl.type = type; fl.frequency.value = freq; fl.Q.value = q;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(vol, t + attack);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(fl); fl.connect(g); g.connect(dst);
+    src.start(t, Math.random() * .3); src.stop(t + dur + .05);
+  }
+  function whistle(c, d, at, dur, f = 2600) {
+    const o = tone(c, d, f, at, dur, 'sine', .32);
+    const lfo = c.createOscillator(), lg = c.createGain(), t = c.currentTime + at;
+    lfo.frequency.value = 28; lg.gain.value = 90; lfo.connect(lg); lg.connect(o.frequency);
+    lfo.start(t); lfo.stop(t + dur + .05);
+    noise(c, d, at, dur, .05, f, 4);
+  }
+
+  const SCORE_SOUNDS = {
+    chime:  ['딩동',     (c, d) => { tone(c, d, 880, 0, .4, 'sine', .45); tone(c, d, 1318.5, .13, .6, 'sine', .4); }],
+    coin:   ['코인',     (c, d) => { tone(c, d, 988, 0, .09, 'square', .18); tone(c, d, 1319, .08, .4, 'square', .18); }],
+    pop:    ['뿅',       (c, d) => { tone(c, d, 300, 0, .18, 'sine', .7, 1400); }],
+    arcade: ['아케이드', (c, d) => { [523, 659, 784, 1047, 1319].forEach((f, k) => tone(c, d, f, k * .055, .14, 'triangle', .35)); }],
+    whistle:['호루라기', (c, d) => { whistle(c, d, 0, .32); }],
+    clap:   ['박수',     (c, d) => { [0, .16].forEach(a => [0, .012, .024].forEach(x => noise(c, d, a + x, .12, .55, 1300, .8))); }],
+    drum:   ['둥둥',     (c, d) => { [0, .15].forEach(a => { tone(c, d, 160, a, .32, 'sine', .9, 45); noise(c, d, a, .06, .25, 2500, .7); }); }],
+    bell:   ['종소리',   (c, d) => { [1046, 2093, 2637].forEach((f, k) => tone(c, d, f, 0, 1.1 - k * .25, 'sine', .25 / (k + 1))); }]
+  };
+  const WIN_SOUNDS = {
+    fanfare: ['팡파레', (c, d) => {
+      [[392, 0], [523, .13], [659, .26]].forEach(([f, a]) => tone(c, d, f, a, .14, 'sawtooth', .22, null, 2400));
+      tone(c, d, 784, .39, .45, 'sawtooth', .24, null, 2400);
+      [[659, .9], [784, 1.05]].forEach(([f, a]) => tone(c, d, f, a, .14, 'sawtooth', .22, null, 2400));
+      [523, 659, 784, 1047].forEach(f => tone(c, d, f, 1.2, 1.4, 'sawtooth', .13, null, 2000));
+      noise(c, d, 1.2, .25, .2, 6000, .5, 'highpass');
+    }],
+    melody: ['승리 멜로디', (c, d) => {
+      const seq = [[523, .14], [659, .14], [784, .14], [1047, .3], [784, .14], [1047, .7]];
+      let a = 0; seq.forEach(([f, l]) => { tone(c, d, f, a, l + .1, 'triangle', .4); tone(c, d, f / 2, a, l + .1, 'square', .07); a += l; });
+      [523, 659, 784].forEach(f => tone(c, d, f, a - .7, 1.2, 'triangle', .15));
+    }],
+    cheer: ['관중 환호', (c, d) => {
+      noise(c, d, 0, 2.6, .35, 900, .6, 'bandpass', .35);
+      noise(c, d, .1, 2.4, .2, 2200, .8, 'bandpass', .4);
+      for (let k = 0; k < 14; k++) { const a = .1 + Math.random() * 1.8; [0, .012].forEach(x => noise(c, d, a + x, .08, .25, 1200 + Math.random() * 800, .9)); }
+      whistle(c, d, .4, .5, 2400); whistle(c, d, 1.1, .7, 2700);
+    }],
+    horn: ['응원 나팔', (c, d) => {
+      [[392, 0, .18], [392, .22, .18], [392, .44, .18], [523, .7, .9]].forEach(([f, a, l]) => {
+        tone(c, d, f, a, l, 'sawtooth', .25, null, 1600); tone(c, d, f * 1.005, a, l, 'square', .08, null, 1600);
+      });
+      noise(c, d, .7, 1.4, .18, 900, .6, 'bandpass', .3);
+    }]
+  };
+  function pick(map, key) {
+    let k = key;
+    if (k === 'random' || !map[k]) {
+      const keys = Object.keys(map).filter(x => x !== last || Object.keys(map).length < 2);
+      k = keys[Math.floor(Math.random() * keys.length)];
+    }
+    last = k; return map[k][1];
+  }
+  function play(map, key, force) {
+    if (!prefs.on && !force) return;
+    const c = ac(); if (!c) return;
+    try { pick(map, key)(c, out(c)); } catch (e) {}
+  }
+  const playScore = () => play(SCORE_SOUNDS, prefs.score);
+  const playWin = () => play(WIN_SOUNDS, prefs.win);
+  const playTick = () => { if (!prefs.on) return; const c = ac(); if (c) tone(c, out(c), 220, 0, .1, 'triangle', .3); };
+  const playStart = () => { if (!prefs.on) return; const c = ac(); if (c) { const d = out(c); whistle(c, d, 0, .25); whistle(c, d, .32, .55); } };
+  const undoStack = [];
+  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(s)); } catch (e) {} };
+
+  const $ = id => document.getElementById(id);
+  const panels = [...document.querySelectorAll('.team')];
+
+  panels.forEach((p, i) => {
+    p.innerHTML = `
+      <div class="head"><span class="name"></span><span class="wins"></span></div>
+      <div class="score">0</div>
+      <div class="ctrls">
+        <button class="fault" type="button" data-act="fault"><span>실수</span><small>다른 두 팀 +1</small></button>
+        <div class="adj">
+          <button type="button" data-act="minus" aria-label="1점 빼기">−1</button>
+          <button type="button" data-act="plus" aria-label="1점 더하기">+1</button>
+        </div>
+      </div>`;
+    p.addEventListener('click', e => {
+      const b = e.target.closest('button'); if (!b || b.disabled) return;
+      const act = b.dataset.act;
+      if (act === 'fault') fault(i);
+      if (act === 'plus') adjust(i, 1);
+      if (act === 'minus') adjust(i, -1);
+    });
+  });
+
+  function commit(fn) {
+    undoStack.push(JSON.stringify(s));
+    if (undoStack.length > 200) undoStack.shift();
+    const before = s.scores.slice();
+    fn();
+    s.over = s.scores.some(x => x >= s.target);
+    save(); render(before);
+  }
+  function fault(i) {
+    if (s.over) return;
+    const others = [0, 1, 2].filter(j => j !== i);
+    commit(() => {
+      others.forEach(j => s.scores[j]++);
+      s.last = `<b>${esc(s.names[i])} 실수</b> → ${others.map(j => esc(s.names[j]) + ' +1').join(', ')}`;
+    });
+    s.over ? playWin() : playScore();
+  }
+  function adjust(i, d) {
+    if (s.over && d > 0) return;
+    if (s.scores[i] + d < 0) return;
+    commit(() => { s.scores[i] += d; s.last = `<b>${esc(s.names[i])}</b> 점수 수정 ${d > 0 ? '+1' : '−1'}`; });
+    if (d < 0) playTick(); else s.over ? playWin() : playScore();
+  }
+  function nextPeriod() {
+    commit(() => {
+      const max = Math.max(...s.scores);
+      const winners = [0, 1, 2].filter(j => s.scores[j] === max);
+      s.done.push({ p: s.period, scores: s.scores.slice(), winners });
+      winners.forEach(w => s.wins[w]++);
+      s.last = `<b>피리어드 ${s.period} 종료</b> · ${winners.map(w => esc(s.names[w])).join('·')} 승`;
+      s.scores = [0, 0, 0]; s.period++;
+    });
+    playStart();
+  }
+  function renderSound() {
+    $('soundBtn').setAttribute('aria-pressed', String(prefs.on));
+    $('soundBtn').classList.toggle('off', !prefs.on);
+    $('soundBtn').firstChild.textContent = prefs.on ? '소리' : '소리 꺼짐';
+    $('sndToggle').textContent = prefs.on ? '켜짐' : '꺼짐';
+    $('sndToggle').setAttribute('aria-pressed', String(prefs.on));
+    $('sndToggle').classList.toggle('off', !prefs.on);
+    $('vol').value = prefs.vol;
+    $('scoreSnd').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.k === prefs.score)));
+    $('winSnd').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.k === prefs.win)));
+  }
+  function toggleSound() { prefs.on = !prefs.on; savePrefs(); renderSound(); if (prefs.on) playTick(); }
+  function undo() {
+    if (!undoStack.length) return;
+    const before = s.scores.slice();
+    s = JSON.parse(undoStack.pop());
+    s.last = '<b>되돌림</b> · ' + (s.last || '경기 시작 상태');
+    save(); render(before);
+  }
+  function esc(t) { return String(t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+  function render(before) {
+    const max = Math.max(...s.scores);
+    panels.forEach((p, i) => {
+      p.style.setProperty('--c', s.colors[i]);
+      p.style.setProperty('--ink', inkFor(s.colors[i]));
+      p.classList.toggle('dark', lum(s.colors[i]) < .03);
+      p.querySelector('.name').textContent = s.names[i];
+      p.querySelector('.wins').textContent = s.wins[i] ? `피리어드 ${s.wins[i]}승` : '';
+      const sc = p.querySelector('.score');
+      sc.textContent = s.scores[i];
+      if (before && before[i] !== s.scores[i]) { sc.classList.remove('bump'); void sc.offsetWidth; sc.classList.add('bump'); }
+      p.classList.toggle('lead', max > 0 && s.scores[i] === max && s.scores.filter(x => x === max).length === 1);
+      p.querySelector('[data-act=fault]').disabled = s.over;
+      p.querySelector('[data-act=plus]').disabled = s.over;
+      p.querySelector('[data-act=minus]').disabled = s.scores[i] === 0;
+      p.setAttribute('aria-label', `${s.names[i]} ${s.scores[i]}점`);
+    });
+    $('pNum').textContent = s.period;
+    $('pTarget').textContent = s.target;
+    $('undoBtn').disabled = !undoStack.length;
+    $('status').innerHTML = s.last || '팀의 <b>실수</b> 버튼을 누르면 나머지 두 팀이 1점씩 얻습니다.';
+    $('over').hidden = !s.over;
+    if (s.over) {
+      const winners = [0, 1, 2].filter(j => s.scores[j] === max);
+      $('overText').innerHTML = `<span>PERIOD ${s.period} 종료</span>${winners.map(w => esc(s.names[w])).join(' · ')} ${max}점 도달${winners.length > 1 ? ' (동점)' : ''}`;
+    }
+    const chips = s.done.map(d => `<span class="chip"><b>P${d.p}</b>${d.scores.map((x, j) =>
+      `<span class="${d.winners.includes(j) ? 'w' : ''}">${esc(s.names[j])} ${x}</span>`).join(' · ')}</span>`).join('');
+    $('hist').innerHTML = (chips || '<span>끝난 피리어드가 여기에 기록됩니다.</span>') +
+      '<span class="hint">키보드: 1·2·3 실수 · Z 되돌리기 · M 소리 · Enter 다음 피리어드</span>';
+  }
+
+  // Sound controls
+  const chipHTML = map => `<button type="button" data-k="random">랜덤</button>` +
+    Object.entries(map).map(([k, [nm]]) => `<button type="button" data-k="${k}">${nm}</button>`).join('');
+  $('scoreSnd').innerHTML = chipHTML(SCORE_SOUNDS);
+  $('winSnd').innerHTML = chipHTML(WIN_SOUNDS);
+  $('scoreSnd').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    prefs.score = b.dataset.k; savePrefs(); renderSound(); play(SCORE_SOUNDS, prefs.score, true);
+  });
+  $('winSnd').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    prefs.win = b.dataset.k; savePrefs(); renderSound(); play(WIN_SOUNDS, prefs.win, true);
+  });
+  $('vol').addEventListener('input', e => { prefs.vol = +e.target.value; savePrefs(); });
+  $('vol').addEventListener('change', () => play(SCORE_SOUNDS, 'chime', true));
+  $('sndToggle').onclick = toggleSound;
+  $('soundBtn').onclick = toggleSound;
+
+  // Toolbar
+  $('undoBtn').onclick = undo;
+  $('overUndo').onclick = undo;
+  $('nextBtn').onclick = nextPeriod;
+  $('fsBtn').onclick = () => {
+    const d = document;
+    try {
+      if (d.fullscreenElement) d.exitFullscreen?.();
+      else d.documentElement.requestFullscreen?.().catch(() => {});
+    } catch (e) {}
+  };
+  document.addEventListener('fullscreenchange', () => { $('fsBtn').textContent = document.fullscreenElement ? '창 모드' : '전체화면'; });
+
+  // Settings
+  const sheet = $('sheet'), resetBtn = $('resetBtn');
+  let draftColors = [];
+
+  // Target presets
+  $('presets').innerHTML = TARGETS.map(t => `<button type="button" data-t="${t}">${t}</button>`).join('');
+  const syncPresets = () => {
+    const v = parseInt($('target').value, 10);
+    $('presets').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.t === v)));
+  };
+  $('presets').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { $('target').value = b.dataset.t; syncPresets(); } });
+  const stepT = d => { $('target').value = Math.max(1, Math.min(99, (parseInt($('target').value, 10) || s.target) + d)); syncPresets(); };
+  $('tMinus').onclick = () => stepT(-1);
+  $('tPlus').onclick = () => stepT(1);
+  $('target').addEventListener('input', syncPresets);
+
+  // Team name + color editors
+  function buildTeamSet(i) {
+    const el = $('ts' + i);
+    el.innerHTML = `
+      <div class="teamset-top">
+        <span class="chip-preview" id="pv${i}">0</span>
+        <input id="n${i}" maxlength="8" aria-label="${i + 1}번 팀 이름">
+      </div>
+      <div class="swatches" role="group" aria-label="${i + 1}번 팀 색상">
+        ${PALETTE.map(([nm, hex]) => `<button type="button" class="sw" data-c="${hex}" style="background:${hex}" title="${nm}" aria-label="${nm}"></button>`).join('')}
+        <label class="custom" title="직접 고르기">＋<input type="color" id="cc${i}" aria-label="${i + 1}번 팀 색상 직접 고르기"></label>
+      </div>`;
+    el.querySelector('.swatches').addEventListener('click', e => {
+      const b = e.target.closest('.sw'); if (!b) return;
+      setDraftColor(i, b.dataset.c);
+    });
+    $('cc' + i).addEventListener('input', e => setDraftColor(i, e.target.value));
+  }
+  function setDraftColor(i, hex) {
+    draftColors[i] = hex;
+    const pv = $('pv' + i);
+    pv.style.background = hex; pv.style.color = inkFor(hex);
+    $('cc' + i).value = hex;
+    $('ts' + i).querySelectorAll('.sw').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.c.toLowerCase() === hex.toLowerCase())));
+  }
+  [0, 1, 2].forEach(buildTeamSet);
+
+  function openSheet(focusTarget) {
+    draftColors = s.colors.slice();
+    [0, 1, 2].forEach(i => { $('n' + i).value = s.names[i]; setDraftColor(i, s.colors[i]); });
+    $('target').value = s.target; syncPresets();
+    resetBtn.classList.remove('armed'); resetBtn.textContent = '새 경기 시작';
+    sheet.hidden = false;
+    (focusTarget ? $('target') : $('n0')).focus();
+  }
+  const closeSheet = () => { sheet.hidden = true; };
+  $('setBtn').onclick = () => openSheet(false);
+  $('periodBtn').onclick = () => openSheet(true);
+  $('closeBtn').onclick = closeSheet;
+  sheet.addEventListener('click', e => { if (e.target === sheet) closeSheet(); });
+  $('setForm').addEventListener('submit', e => {
+    e.preventDefault();
+    const names = [0, 1, 2].map(i => $('n' + i).value.trim() || s.names[i]);
+    const t = Math.max(1, Math.min(99, parseInt($('target').value, 10) || s.target));
+    const colors = draftColors.slice();
+    commit(() => { s.names = names; s.target = t; s.colors = colors; s.last = `<b>설정 변경</b> · 목표 ${t}점`; });
+    closeSheet();
+  });
+  resetBtn.onclick = () => {
+    if (!resetBtn.classList.contains('armed')) {
+      resetBtn.classList.add('armed'); resetBtn.textContent = '한 번 더 누르면 초기화'; return;
+    }
+    commit(() => { const n = s.names, t = s.target, c = s.colors; s = fresh(n, t, c); s.last = '<b>새 경기</b> · 되돌리기로 복구할 수 있습니다'; });
+    closeSheet();
+  };
+
+  // Keyboard (laptop)
+  document.addEventListener('keydown', e => {
+    if (!sheet.hidden) { if (e.key === 'Escape') closeSheet(); return; }
+    if (e.target.closest('input')) return;
+    if (['1', '2', '3'].includes(e.key)) fault(+e.key - 1);
+    else if (e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); }
+    else if (e.key.toLowerCase() === 'm') toggleSound();
+    else if (e.key === 'Enter' && s.over) { e.preventDefault(); nextPeriod(); }
+  });
+
+  // Keep screen awake during a game where allowed
+  let lock = null;
+  async function wake() { try { if (!lock && navigator.wakeLock) { lock = await navigator.wakeLock.request('screen'); lock.addEventListener('release', () => lock = null); } } catch (e) {} }
+  document.addEventListener('pointerdown', wake, { once: true });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') wake(); });
+
+  render();
+  renderSound();
+})();
+</script>
+</body>
+</html>
